@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=yes">
-  <title>🚌 香港巴士即時到站查詢 | 真實數據版</title>
+  <title>🚌 香港巴士即時到站查詢</title>
   <style>
     :root {
       --bg-gradient: linear-gradient(145deg, #f0f4f8 0%, #d9e2ec 100%);
@@ -271,24 +271,24 @@
 <body>
   <div class="app-card">
     <h1>🚏 巴士即時到站</h1>
-    <div class="subtitle">輸入巴士站編號，查詢九巴、城巴、新巴等真實到站時間（數據來自 data.gov.hk）</div>
+    <div class="subtitle">輸入巴士站編號，查詢九巴、城巴等真實到站時間</div>
 
     <div class="search-area">
       <span class="input-label">🔎 巴士站編號</span>
       <div class="input-wrapper">
-        <input type="text" id="stationId" inputmode="numeric" pattern="[0-9]*" placeholder="九巴：95421｜城巴：500001" autocomplete="off">
+        <input type="text" id="stationId" inputmode="numeric" pattern="[0-9]*" placeholder="例如：95421（九巴）或 002345（城巴）" autocomplete="off">
         <button id="searchBtn">查詢 <span>🚌</span></button>
       </div>
       <div class="example-hint">
         <span>常用站點：</span>
-        <span class="example-chip" data-id="95421">天瑞總站 (95421)</span>
-        <span class="example-chip" data-id="93601">天水圍站 (93601)</span>
-        <span class="example-chip" data-id="500141">中環 (500141)</span>
+        <span class="example-chip" data-id="95421">天瑞總站</span>
+        <span class="example-chip" data-id="93601">天水圍站</span>
+        <span class="example-chip" data-id="002345">中環碼頭</span>
       </div>
     </div>
 
     <div class="status-message" id="statusMsg">
-      <span>👋 請輸入巴士站編號（KMB 5 位、CTB 6 位）</span>
+      <span>👋 請輸入巴士站編號</span>
     </div>
 
     <div class="results-container" id="resultsContainer">
@@ -297,36 +297,20 @@
       </div>
     </div>
     <div class="footer-note">
-      * 即時數據來源：香港政府資料一線通 (data.gov.hk)
+      * 數據來源：香港政府資料一線通 (data.gov.hk)
     </div>
   </div>
 
   <script>
     (function() {
-      // 使用多個 CORS 代理作為備援
-      const PROXIES = [
-        'https://corsproxy.io/?',
-        'https://api.allorigins.win/raw?url=',
-        'https://api.codetabs.com/v1/proxy?quest='
-      ];
-
-      // API 端點
-      function getApiUrl(stopId) {
-        if (stopId.length === 5) {
-          // 九巴/龍運
-          return `https://data.etabus.gov.hk/v1/transport/kmb/stop-eta/${stopId}`;
-        } else if (stopId.length === 6) {
-          // 城巴/新巴
-          return `https://data.etabus.gov.hk/v1/transport/ctb/stop-eta/${stopId}`;
-        }
-        return null;
-      }
-
-      function getCompanyName(stopId) {
-        if (stopId.length === 5) return '九巴 KMB / 龍運 LWB';
-        if (stopId.length === 6) return '城巴 CTB / 新巴 NWFB';
-        return '未知巴士公司';
-      }
+      // 直接使用 API，不經過 CORS 代理
+      // 這些 API 支持 CORS，可以直接從瀏覽器訪問
+      const API_ENDPOINTS = {
+        // 九巴/龍運
+        KMB: 'https://data.etabus.gov.hk/v1/transport/kmb/stop-eta/',
+        // 城巴/新巴
+        CTB: 'https://data.etabus.gov.hk/v1/transport/ctb/stop-eta/'
+      };
 
       const stationInput = document.getElementById('stationId');
       const searchBtn = document.getElementById('searchBtn');
@@ -394,33 +378,6 @@
         resultsContainer.innerHTML = html;
       }
 
-      async function fetchWithProxy(url, proxyIndex = 0) {
-        if (proxyIndex >= PROXIES.length) {
-          throw new Error('所有代理都無法訪問');
-        }
-
-        const proxyUrl = PROXIES[proxyIndex] + encodeURIComponent(url);
-        
-        try {
-          const res = await fetch(proxyUrl, {
-            method: 'GET',
-            headers: {
-              'Accept': 'application/json',
-            },
-            signal: AbortSignal.timeout(10000) // 10秒超時
-          });
-          
-          if (!res.ok) {
-            throw new Error(`HTTP ${res.status}`);
-          }
-          
-          return await res.json();
-        } catch (err) {
-          console.warn(`代理 ${proxyIndex + 1} 失敗:`, err);
-          return fetchWithProxy(url, proxyIndex + 1);
-        }
-      }
-
       async function performSearch() {
         const rawId = stationInput.value.trim();
         if (!rawId) {
@@ -429,8 +386,9 @@
           return;
         }
 
+        // 接受5位或6位數字
         if (!/^\d{5,6}$/.test(rawId)) {
-          setStatus('⚠️ 九巴站號是 5 位數，城巴/新巴是 6 位數', true);
+          setStatus('⚠️ 請輸入5位（九巴）或6位（城巴）數字的站牌編號', true);
           return;
         }
 
@@ -441,14 +399,33 @@
         resultsContainer.innerHTML = '';
 
         try {
-          const apiUrl = getApiUrl(rawId);
-          if (!apiUrl) {
-            throw new Error('無效的站牌編號');
+          let apiUrl;
+          let companyName;
+          
+          if (rawId.length === 5) {
+            apiUrl = API_ENDPOINTS.KMB + rawId;
+            companyName = '九巴 KMB';
+          } else if (rawId.length === 6) {
+            apiUrl = API_ENDPOINTS.CTB + rawId;
+            companyName = '城巴 CTB';
           }
 
-          console.log('查詢 API:', apiUrl);
-          const json = await fetchWithProxy(apiUrl);
-          console.log('API 回應:', json);
+          console.log('正在請求:', apiUrl);
+
+          const response = await fetch(apiUrl, {
+            method: 'GET',
+            headers: {
+              'Accept': 'application/json',
+            },
+            signal: AbortSignal.timeout(15000) // 15秒超時
+          });
+
+          if (!response.ok) {
+            throw new Error(`HTTP ${response.status}`);
+          }
+
+          const json = await response.json();
+          console.log('API回應:', json);
 
           if (seq !== requestSeq) return;
 
@@ -459,24 +436,13 @@
             for (const e of json.eta) {
               const key = e.route + "|" + e.dest_tc;
               if (!routeMap[key]) {
-                routeMap[key] = { route: e.route, dest: e.dest_tc || '未知目的地', etas: [] };
+                routeMap[key] = { 
+                  route: e.route, 
+                  dest: e.dest_tc || e.dest_en || '未知目的地', 
+                  etas: [] 
+                };
               }
               const min = minutesFromNow(e.eta);
-              routeMap[key].etas.push(min);
-            }
-            
-            for (const key in routeMap) {
-              routes.push(routeMap[key]);
-            }
-          } else if (json.data && Array.isArray(json.data)) {
-            // 某些 API 版本使用 data 欄位
-            const routeMap = {};
-            for (const e of json.data) {
-              const key = e.route + "|" + (e.dest_tc || e.dest_en || '未知');
-              if (!routeMap[key]) {
-                routeMap[key] = { route: e.route, dest: e.dest_tc || e.dest_en || '未知目的地', etas: [] };
-              }
-              const min = minutesFromNow(e.eta || e.eta_time);
               routeMap[key].etas.push(min);
             }
             
@@ -488,7 +454,7 @@
           const groups = [];
           if (routes.length > 0) {
             groups.push({
-              company: getCompanyName(rawId),
+              company: companyName,
               routes: routes
             });
           }
@@ -506,15 +472,24 @@
           console.error('查詢錯誤:', err);
           if (seq !== requestSeq) return;
           
-          setStatus('⚠️ 無法連接到數據服務，請稍後再試', true);
+          let errorMsg = '無法連接到數據服務';
+          if (err.name === 'TimeoutError') {
+            errorMsg = '連接超時，請檢查網絡';
+          } else if (err.message.includes('Failed to fetch')) {
+            errorMsg = '網絡連接失敗，可能是防火牆或DNS問題';
+          } else if (err.message.includes('404')) {
+            errorMsg = '找不到此站牌編號';
+          }
+          
+          setStatus(`⚠️ ${errorMsg}`, true);
           resultsContainer.innerHTML = `
             <div class="no-result">
-              <div>😥 暫時無法取得即時資料</div>
-              <div style="font-size:0.8rem; margin-top:0.5rem;">可能原因：</div>
-              <div style="font-size:0.8rem;">• 網絡連接問題</div>
-              <div style="font-size:0.8rem;">• CORS 代理服務暫時不可用</div>
-              <div style="font-size:0.8rem;">• 站牌編號不存在</div>
-              <div style="font-size:0.8rem; margin-top:0.5rem;">請稍後重試或嘗試其他站牌</div>
+              <div>😥 查詢失敗</div>
+              <div style="font-size:0.8rem; margin-top:0.5rem;">${errorMsg}</div>
+              <div style="font-size:0.8rem; margin-top:0.5rem;">請檢查：</div>
+              <div style="font-size:0.8rem;">• 是否已連接到互聯網</div>
+              <div style="font-size:0.8rem;">• 站牌編號是否正確</div>
+              <div style="font-size:0.8rem;">• 是否需要使用VPN</div>
             </div>
           `;
         } finally {
@@ -544,7 +519,7 @@
       searchBtn.addEventListener('click', performSearch);
       setupExampleChips();
 
-      setStatus('👋 請輸入巴士站編號（KMB 5 位、CTB 6 位）');
+      setStatus('👋 請輸入巴士站編號（九巴5位、城巴6位）');
     })();
   </script>
 </body>
