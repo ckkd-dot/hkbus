@@ -1,3 +1,4 @@
+
 <!DOCTYPE html>
 <html lang="zh-Hant">
 <head>
@@ -235,9 +236,9 @@
       display: inline-block;
       width: 1rem;
       height: 1rem;
-      border: 2px solid rgba(255,255,255,0.5);
+      border: 2px solid rgba(31, 78, 111, 0.3);
       border-radius: 50%;
-      border-top-color: white;
+      border-top-color: #1f4e6f;
       animation: spin 0.8s linear infinite;
       margin-left: 0.4rem;
     }
@@ -252,15 +253,13 @@
     <div class="search-area">
       <span class="input-label">🔎 巴士站編號</span>
       <div class="input-wrapper">
-        <input type="text" id="stationId" inputmode="numeric" pattern="[0-9]*" placeholder="例如：002345" autocomplete="off">
+        <input type="text" id="stationId" inputmode="numeric" pattern="[0-9]*" placeholder="九巴：95421｜城巴：501234" autocomplete="off">
         <button id="searchBtn">查詢 <span id="btnIcon">🚌</span></button>
       </div>
       <div class="example-hint">
         <span>常用站點：</span>
-        <span class="example-chip" data-id="002345">中環碼頭</span>
-        <span class="example-chip" data-id="000913">尖沙咀碼頭</span>
-        <span class="example-chip" data-id="003245">銅鑼灣站</span>
-        <span class="example-chip" data-id="001844">旺角街市</span>
+        <span class="example-chip" data-id="95421">天瑞總站 (95421)</span>
+        <span class="example-chip" data-id="93601">天水圍站 (93601)</span>
       </div>
     </div>
 
@@ -274,188 +273,37 @@
       </div>
     </div>
     <div class="footer-note">
-      * 模擬資料僅供展示，實際到站時間以運輸署及巴士公司公佈為準
+      * 數據來自運輸署開放平台。預計時間只供參考。
     </div>
   </div>
 
   <script>
     (function() {
-      // ---------- 模擬巴士公司資料庫 (真實站牌編號格式) ----------
-      // 依照香港巴士站編號特徵：通常為六位數字，首位可能為0或字母開頭（如CTB、KMB等）
-      // 但為示範，我們使用純數字編號，同時映射到多間公司
-      const mockDatabase = {
-        '002345': {   // 中環碼頭
-          location: '中環碼頭',
-          companies: {
-            '九巴 KMB': [
-              { route: '1A', dest: '中秀茂坪', etas: ['2 分鐘', '12 分鐘', '25 分鐘'] },
-              { route: '2', dest: '蘇屋', etas: ['5 分鐘', '18 分鐘'] },
-              { route: '5C', dest: '慈雲山(中)', etas: ['8 分鐘', '22 分鐘', '35 分鐘'] }
-            ],
-            '城巴 CTB': [
-              { route: '11', dest: '渣甸山', etas: ['3 分鐘', '16 分鐘'] },
-              { route: '25', dest: '寶馬山', etas: ['7 分鐘', '28 分鐘', '42 分鐘'] },
-              { route: '780', dest: '柴灣(東)', etas: ['1 分鐘', '9 分鐘', '19 分鐘'] }
-            ],
-            '新巴 NWFB': [
-              { route: '15', dest: '山頂', etas: ['4 分鐘', '14 分鐘'] },
-              { route: '94', dest: '利東邨', etas: ['12 分鐘', '26 分鐘'] }
-            ]
-          }
-        },
-        '000913': {   // 尖沙咀碼頭
-          location: '尖沙咀天星碼頭',
-          companies: {
-            '九巴 KMB': [
-              { route: '1', dest: '竹園邨', etas: ['3 分鐘', '17 分鐘', '31 分鐘'] },
-              { route: '1A', dest: '中秀茂坪', etas: ['6 分鐘', '15 分鐘'] },
-              { route: '5A', dest: '啟德(啟晴邨)', etas: ['9 分鐘', '24 分鐘'] }
-            ],
-            '城巴 CTB': [
-              { route: '973', dest: '赤柱村', etas: ['11 分鐘', '30 分鐘'] },
-              { route: 'A21', dest: '紅磡站', etas: ['5 分鐘', '12 分鐘', '22 分鐘'] }
-            ]
-          }
-        },
-        '003245': {   // 銅鑼灣站
-          location: '銅鑼灣站',
-          companies: {
-            '城巴 CTB': [
-              { route: '5B', dest: '堅尼地城', etas: ['2 分鐘', '9 分鐘', '20 分鐘'] },
-              { route: '8X', dest: '小西灣(藍灣半島)', etas: ['4 分鐘', '14 分鐘'] },
-              { route: '10', dest: '北角碼頭', etas: ['1 分鐘', '7 分鐘', '13 分鐘'] }
-            ],
-            '九巴 KMB': [
-              { route: '108', dest: '啟業', etas: ['8 分鐘', '19 分鐘'] },
-              { route: '112', dest: '蘇屋', etas: ['3 分鐘', '16 分鐘', '27 分鐘'] }
-            ],
-            '新巴 NWFB': [
-              { route: '2A', dest: '耀東邨', etas: ['6 分鐘', '21 分鐘'] },
-              { route: '23', dest: '蒲飛路', etas: ['10 分鐘', '25 分鐘'] }
-            ]
-          }
-        },
-        '001844': {   // 旺角街市
-          location: '旺角街市',
-          companies: {
-            '九巴 KMB': [
-              { route: '6', dest: '荔枝角', etas: ['2 分鐘', '13 分鐘', '23 分鐘'] },
-              { route: '9', dest: '坪石', etas: ['7 分鐘', '20 分鐘'] },
-              { route: '27', dest: '順天', etas: ['5 分鐘', '15 分鐘', '30 分鐘'] },
-              { route: '95', dest: '翠林', etas: ['11 分鐘', '24 分鐘'] }
-            ],
-            '城巴 CTB': [
-              { route: '20A', dest: '高鐵西九龍站', etas: ['4 分鐘', '18 分鐘'] },
-              { route: '701', dest: '海麗邨', etas: ['2 分鐘', '10 分鐘'] }
-            ],
-            '新巴 NWFB': [
-              { route: '104', dest: '白田', etas: ['6 分鐘', '19 分鐘', '32 分鐘'] }
-            ]
-          }
-        }
-      };
-
-      // 通用後備資料 (若輸入未知編號，生成動態模擬)
-      function getFallbackData(stationId) {
-        const companies = ['九巴 KMB', '城巴 CTB', '新巴 NWFB', '龍運 LWB'];
-        const routesPool = [
-          { route: '6A', dest: '荔枝角' },
-          { route: '12', dest: '中環碼頭' },
-          { route: '33A', dest: '荃灣如心廣場' },
-          { route: '70', dest: '佐敦(西九龍站)' },
-          { route: '98D', dest: '坑口北' },
-          { route: '290', dest: '將軍澳工業邨' },
-          { route: 'A31', dest: '機場地面運輸中心' },
-          { route: 'E23', dest: '慈雲山(南)' }
-        ];
-        const randomCount = 2 + Math.floor(Math.random() * 3);
-        const randomCompanies = [...companies].sort(() => Math.random() - 0.5).slice(0, 2 + Math.floor(Math.random() * 2));
-        const result = {};
-        randomCompanies.forEach(comp => {
-          const routeList = [];
-          const routeCount = 2 + Math.floor(Math.random() * 2);
-          for (let i = 0; i < routeCount; i++) {
-            const randomRoute = routesPool[Math.floor(Math.random() * routesPool.length)];
-            const etaCount = 2 + Math.floor(Math.random() * 3);
-            const etas = [];
-            for (let j = 0; j < etaCount; j++) {
-              etas.push(`${2 + Math.floor(Math.random() * 28)} 分鐘`);
-            }
-            routeList.push({
-              route: randomRoute.route,
-              dest: randomRoute.dest,
-              etas: etas
-            });
-          }
-          result[comp] = routeList;
-        });
-        return { location: `自訂站點 (編號 ${stationId})`, companies: result };
-      }
-
-      // DOM 元素
       const stationInput = document.getElementById('stationId');
       const searchBtn = document.getElementById('searchBtn');
       const statusMsg = document.getElementById('statusMsg');
       const resultsContainer = document.getElementById('resultsContainer');
       const placeholderResult = document.getElementById('placeholderResult');
 
-      // 清除結果區佔位
       function clearPlaceholder() {
         if (placeholderResult) placeholderResult.style.display = 'none';
       }
 
-      // 顯示狀態訊息
       function setStatus(message, isError = false) {
         statusMsg.innerHTML = message;
         statusMsg.style.color = isError ? '#b13e3e' : '#29485e';
       }
 
-      // 渲染結果
-      function renderResults(data) {
-        if (!data || !data.companies || Object.keys(data.companies).length === 0) {
-          resultsContainer.innerHTML = `<div class="no-result">😕 沒有找到此巴士站的到站資料，請確認編號是否正確。</div>`;
-          return;
-        }
-
-        let html = '';
-        const companyNames = Object.keys(data.companies);
-        companyNames.forEach(company => {
-          const routes = data.companies[company];
-          html += `<div class="company-section">`;
-          html += `<div class="company-header">🏢 ${company}</div>`;
-          html += `<div class="route-list">`;
-          routes.forEach(route => {
-            const etaBadges = route.etas.map(eta => {
-              // 標記「即將到站」的顏色
-              let extraClass = '';
-              const minutes = parseInt(eta, 10);
-              if (!isNaN(minutes)) {
-                if (minutes <= 5) extraClass = 'soon';
-                else if (minutes <= 15) extraClass = 'medium';
-              }
-              return `<span class="eta-badge ${extraClass}">${eta}</span>`;
-            }).join('');
-            html += `
-              <div class="route-item">
-                <div class="route-info">
-                  <span>${route.route} <span style="font-weight:400; margin-left:0.2rem;">往</span> ${route.dest}</span>
-                  <span class="route-dest">目的地：${route.dest}</span>
-                </div>
-                <div class="eta-times">${etaBadges}</div>
-              </div>
-            `;
-          });
-          html += `</div></div>`;
-        });
-
-        // 加入地點標示
-        const locationName = data.location || '';
-        html = `<div style="margin-bottom:0.8rem; font-weight:600; color:#1f4e6f; display:flex; align-items:center; gap:0.3rem;">📍 ${locationName}</div>` + html;
-        resultsContainer.innerHTML = html;
+      function minutesFromNow(isoString) {
+        if (!isoString) return null;
+        const eta = new Date(isoString);
+        const now = new Date();
+        const diffMs = eta - now;
+        if (diffMs < 0) return 0;
+        return Math.round(diffMs / 60000);
       }
 
-      // 查詢函數
-      function performSearch() {
+      async function performSearch() {
         const rawId = stationInput.value.trim();
         if (!rawId) {
           setStatus('⚠️ 請先輸入巴士站編號', true);
@@ -463,36 +311,98 @@
           return;
         }
 
-        // 僅允許數字（可選：加上英文站牌代號過濾）
-        if (!/^\d{4,6}$/.test(rawId)) {
-          setStatus('⚠️ 站牌編號通常為4～6位數字，請重新輸入', true);
+        if (!/^\d{5,6}$/.test(rawId)) {
+          setStatus('⚠️ 九巴站號係5位數，城巴/新巴係6位數', true);
           return;
         }
 
-        // 模擬載入狀態
         setStatus(`🔍 正在查詢「${rawId}」的即時到站資料... <span class="loader"></span>`);
         searchBtn.disabled = true;
         searchBtn.innerHTML = '查詢中...';
 
-        // 模擬延遲 400ms
-        setTimeout(() => {
-          let data = mockDatabase[rawId];
-          if (!data) {
-            data = getFallbackData(rawId);
+        resultsContainer.innerHTML = '';
+
+        let urls = [];
+        if (rawId.length === 5) {
+          urls.push({ name: '九巴 / 龍運', url: `https://data.etabus.gov.hk/v1/transport/batch/stop-eta/kmb/${rawId}` });
+        } else if (rawId.length === 6) {
+          urls.push({ name: '城巴 / 新巴', url: `https://data.etabus.gov.hk/v1/transport/batch/stop-eta/ctb/${rawId}` });
+        }
+
+        const allResults = {};
+
+        try {
+          for (const entry of urls) {
+            const resp = await fetch(entry.url);
+            if (!resp.ok) continue;
+            const data = await resp.json();
+            if (data.eta && data.eta.length > 0) {
+              allResults[entry.name] = data.eta;
+            }
           }
 
-          // 更新狀態與渲染
-          const companyCount = Object.keys(data.companies).length;
-          setStatus(`✅ 已顯示 ${companyCount} 間巴士公司的到站預測`);
-          renderResults(data);
           clearPlaceholder();
 
-          searchBtn.disabled = false;
-          searchBtn.innerHTML = '查詢 <span id="btnIcon">🚌</span>';
-        }, 400);
+          if (Object.keys(allResults).length === 0) {
+            setStatus('ℹ️ 暫時沒有巴士預計到站資料');
+            resultsContainer.innerHTML = `<div class="no-result">冇即時到站數據。可能收車、暫停服務或者該站唔支援實時預報。</div>`;
+            return;
+          }
+
+          let html = '';
+          for (const compName of Object.keys(allResults)) {
+            const etaList = allResults[compName];
+            html += `<div class="company-section">`;
+            html += `<div class="company-header">🏢 ${compName}</div>`;
+            html += `<div class="route-list">`;
+
+            const routes = {};
+            for (const e of etaList) {
+              const key = e.route + '|' + e.dest_tc;
+              if (!routes[key]) {
+                routes[key] = { route: e.route, dest: e.dest_tc, times: [] };
+              }
+              const min = minutesFromNow(e.eta);
+              if (min !== null) {
+                routes[key].times.push(min);
+              }
+            }
+
+            for (const k of Object.keys(routes)) {
+              const r = routes[k];
+              const badges = r.times.map(m => {
+                let cls = 'eta-badge';
+                if (m <= 5) cls += ' soon';
+                else if (m <= 15) cls += ' medium';
+                return `<span class="${cls}">${m} 分鐘</span>`;
+              }).join('');
+
+              html += `
+                <div class="route-item">
+                  <div class="route-info">
+                    <span>${r.route} <span style="font-weight:400; margin-left:0.2rem;">往</span> ${r.dest}</span>
+                    <span class="route-dest">目的地：${r.dest}</span>
+                  </div>
+                  <div class="eta-times">${badges}</div>
+                </div>
+              `;
+            }
+
+            html += `</div></div>`;
+          }
+
+          setStatus(`✅ 成功取得到站預報`);
+          resultsContainer.innerHTML = html;
+
+        } catch (err) {
+          setStatus('❌ 網絡或者伺服器錯誤，請稍後再試', true);
+          resultsContainer.innerHTML = `<div class="no-result">${err.message}</div>`;
+        }
+
+        searchBtn.disabled = false;
+        searchBtn.innerHTML = '查詢 <span id="btnIcon">🚌</span>';
       }
 
-      // 點擊範例站牌
       function setupExampleChips() {
         const chips = document.querySelectorAll('.example-chip');
         chips.forEach(chip => {
@@ -506,7 +416,6 @@
         });
       }
 
-      // 輸入框 Enter 鍵觸發
       stationInput.addEventListener('keypress', (e) => {
         if (e.key === 'Enter') {
           e.preventDefault();
@@ -517,8 +426,6 @@
       searchBtn.addEventListener('click', performSearch);
       setupExampleChips();
 
-      // 初始顯示一個範例（可選）
-      // 預設為空，但可以提供一個誘導提示
       setStatus('👋 請輸入巴士站編號（可點擊下方常用站點）');
     })();
   </script>
