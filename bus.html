@@ -288,7 +288,7 @@
     </div>
 
     <div class="status-message" id="statusMsg">
-      <span>👋 請輸入巴士站編號（KMB 5 位、CTB 6 位）</span>
+      <span>👋 請輸入巴士站編號（KMB 5 位、CTB 6 位）</span>
     </div>
 
     <div class="results-container" id="resultsContainer">
@@ -297,26 +297,35 @@
       </div>
     </div>
     <div class="footer-note">
-      * 即時數據來源：香港政府資料一線通 (data.gov.hk)。使用第三方 CORS Proxy 繞過跨域限制。
+      * 即時數據來源：香港政府資料一線通 (data.gov.hk)
     </div>
   </div>
 
   <script>
     (function() {
-      const PROXY = "https://corsproxy.io/?";
+      // 使用多個 CORS 代理作為備援
+      const PROXIES = [
+        'https://corsproxy.io/?',
+        'https://api.allorigins.win/raw?url=',
+        'https://api.codetabs.com/v1/proxy?quest='
+      ];
 
-      function getUrls(stopId) {
+      // API 端點
+      function getApiUrl(stopId) {
         if (stopId.length === 5) {
-          return [
-            { name: "九巴 / 龍運", url: PROXY + encodeURIComponent("https://data.etabus.gov.hk/v1/transport/kmb/stop-eta/" + stopId) }
-          ];
+          // 九巴/龍運
+          return `https://data.etabus.gov.hk/v1/transport/kmb/stop-eta/${stopId}`;
         } else if (stopId.length === 6) {
-          return [
-            { name: "城巴 / 新巴", url: PROXY + encodeURIComponent("https://data.etabus.gov.hk/v1/transport/ctb/stop-eta/" + stopId) }
-          ];
-        } else {
-          return [];
+          // 城巴/新巴
+          return `https://data.etabus.gov.hk/v1/transport/ctb/stop-eta/${stopId}`;
         }
+        return null;
+      }
+
+      function getCompanyName(stopId) {
+        if (stopId.length === 5) return '九巴 KMB / 龍運 LWB';
+        if (stopId.length === 6) return '城巴 CTB / 新巴 NWFB';
+        return '未知巴士公司';
       }
 
       const stationInput = document.getElementById('stationId');
@@ -341,12 +350,13 @@
         const eta = new Date(isoStr);
         const now = new Date();
         if (isNaN(eta.getTime())) return null;
-        return Math.max(0, Math.round((eta - now) / 60000));
+        const diff = (eta - now) / 60000;
+        return diff < 0 ? 0 : Math.round(diff);
       }
 
       function renderResults(groups) {
         if (groups.length === 0) {
-          resultsContainer.innerHTML = `<div class="no-result">😕 暫時冇到站資料。可能已經收車或者該站唔支援預報。</div>`;
+          resultsContainer.innerHTML = `<div class="no-result">😕 暫時沒有到站資料。可能已經收車或者該站不支援預報。</div>`;
           return;
         }
 
@@ -384,6 +394,33 @@
         resultsContainer.innerHTML = html;
       }
 
+      async function fetchWithProxy(url, proxyIndex = 0) {
+        if (proxyIndex >= PROXIES.length) {
+          throw new Error('所有代理都無法訪問');
+        }
+
+        const proxyUrl = PROXIES[proxyIndex] + encodeURIComponent(url);
+        
+        try {
+          const res = await fetch(proxyUrl, {
+            method: 'GET',
+            headers: {
+              'Accept': 'application/json',
+            },
+            signal: AbortSignal.timeout(10000) // 10秒超時
+          });
+          
+          if (!res.ok) {
+            throw new Error(`HTTP ${res.status}`);
+          }
+          
+          return await res.json();
+        } catch (err) {
+          console.warn(`代理 ${proxyIndex + 1} 失敗:`, err);
+          return fetchWithProxy(url, proxyIndex + 1);
+        }
+      }
+
       async function performSearch() {
         const rawId = stationInput.value.trim();
         if (!rawId) {
@@ -393,7 +430,7 @@
         }
 
         if (!/^\d{5,6}$/.test(rawId)) {
-          setStatus('⚠️ 九巴站號係 5 位數，城巴 / 新巴係 6 位數', true);
+          setStatus('⚠️ 九巴站號是 5 位數，城巴/新巴是 6 位數', true);
           return;
         }
 
@@ -403,43 +440,89 @@
         searchBtn.innerHTML = '查詢中…';
         resultsContainer.innerHTML = '';
 
-        const urlList = getUrls(rawId);
-        const groups = [];
+        try {
+          const apiUrl = getApiUrl(rawId);
+          if (!apiUrl) {
+            throw new Error('無效的站牌編號');
+          }
 
-        for (const entry of urlList) {
-          try {
-            const res = await fetch(entry.url);
-            if (!res.ok) continue;
-            const json = await res.json();
-            if (!json.eta || !Array.isArray(json.eta)) continue;
+          console.log('查詢 API:', apiUrl);
+          const json = await fetchWithProxy(apiUrl);
+          console.log('API 回應:', json);
 
+          if (seq !== requestSeq) return;
+
+          // 解析數據
+          const routes = [];
+          if (json.eta && Array.isArray(json.eta)) {
             const routeMap = {};
             for (const e of json.eta) {
               const key = e.route + "|" + e.dest_tc;
               if (!routeMap[key]) {
-                routeMap[key] = { route: e.route, dest: e.dest_tc, etas: [] };
+                routeMap[key] = { route: e.route, dest: e.dest_tc || '未知目的地', etas: [] };
               }
               const min = minutesFromNow(e.eta);
               routeMap[key].etas.push(min);
             }
-
-            const routes = Object.values(routeMap);
-            if (routes.length > 0) {
-              groups.push({ company: entry.name, routes });
+            
+            for (const key in routeMap) {
+              routes.push(routeMap[key]);
             }
-          } catch (err) {
-            console.warn(entry.url, err);
+          } else if (json.data && Array.isArray(json.data)) {
+            // 某些 API 版本使用 data 欄位
+            const routeMap = {};
+            for (const e of json.data) {
+              const key = e.route + "|" + (e.dest_tc || e.dest_en || '未知');
+              if (!routeMap[key]) {
+                routeMap[key] = { route: e.route, dest: e.dest_tc || e.dest_en || '未知目的地', etas: [] };
+              }
+              const min = minutesFromNow(e.eta || e.eta_time);
+              routeMap[key].etas.push(min);
+            }
+            
+            for (const key in routeMap) {
+              routes.push(routeMap[key]);
+            }
+          }
+
+          const groups = [];
+          if (routes.length > 0) {
+            groups.push({
+              company: getCompanyName(rawId),
+              routes: routes
+            });
+          }
+
+          clearPlaceholder();
+          renderResults(groups);
+          
+          if (routes.length > 0) {
+            setStatus(`✅ 已取得 ${routes.length} 條路線的到站預報`);
+          } else {
+            setStatus('ℹ️ 該站暫時沒有到站數據');
+          }
+
+        } catch (err) {
+          console.error('查詢錯誤:', err);
+          if (seq !== requestSeq) return;
+          
+          setStatus('⚠️ 無法連接到數據服務，請稍後再試', true);
+          resultsContainer.innerHTML = `
+            <div class="no-result">
+              <div>😥 暫時無法取得即時資料</div>
+              <div style="font-size:0.8rem; margin-top:0.5rem;">可能原因：</div>
+              <div style="font-size:0.8rem;">• 網絡連接問題</div>
+              <div style="font-size:0.8rem;">• CORS 代理服務暫時不可用</div>
+              <div style="font-size:0.8rem;">• 站牌編號不存在</div>
+              <div style="font-size:0.8rem; margin-top:0.5rem;">請稍後重試或嘗試其他站牌</div>
+            </div>
+          `;
+        } finally {
+          if (seq === requestSeq) {
+            searchBtn.disabled = false;
+            searchBtn.innerHTML = '查詢 <span>🚌</span>';
           }
         }
-
-        if (seq !== requestSeq) return;
-
-        clearPlaceholder();
-        renderResults(groups);
-        setStatus(groups.length > 0 ? "✅ 已取得到站預報" : "ℹ️ 冇即時到站數據");
-
-        searchBtn.disabled = false;
-        searchBtn.innerHTML = '查詢 <span>🚌</span>';
       }
 
       function setupExampleChips() {
@@ -461,7 +544,7 @@
       searchBtn.addEventListener('click', performSearch);
       setupExampleChips();
 
-      setStatus('👋 請輸入巴士站編號（KMB 5 位、CTB 6 位）');
+      setStatus('👋 請輸入巴士站編號（KMB 5 位、CTB 6 位）');
     })();
   </script>
 </body>
