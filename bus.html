@@ -56,7 +56,7 @@
 
     <script>
         const KMB_API = 'https://data.etabus.gov.hk/v1/transport/kmb';
-        const CTB_API = 'https://data.etabus.gov.hk/v1/transport/citybus-nwfb';
+        const CTB_API = 'https://data.etabus.gov.hk/v1/transport/citybus';
 
         function resetForm() {
             document.getElementById('dir-section').style.display = 'none';
@@ -92,14 +92,23 @@
                         boundSelect.innerHTML += `<option value="${b.bound}" data-dir="${apiDir}">[${dirText}] 往 ${b.dest}</option>`;
                     });
                 } else {
-                    // 城巴公司名稱需大寫 CTB
-                    const resOut = await fetch(`${CTB_API}/route/CTB/${route}`);
-                    const dataOut = await resOut.json();
-                    
-                    if (!dataOut.data || !dataOut.data.route) throw new Error('找不到該路線');
+                    // 城巴：分別呼叫 outbound 和 inbound
+                    const [resOut, resIn] = await Promise.all([
+                        fetch(`${CTB_API}/route/CTB/${route}/outbound`).then(r => r.json()),
+                        fetch(`${CTB_API}/route/CTB/${route}/inbound`).then(r => r.json())
+                    ]);
 
-                    boundSelect.innerHTML += `<option value="O" data-dir="outbound">[去程] 往 ${dataOut.data.dest_tc}</option>`;
-                    boundSelect.innerHTML += `<option value="I" data-dir="inbound">[回程] 往 ${dataOut.data.orig_tc}</option>`;
+                    const hasOut = resOut.data && resOut.data.route;
+                    const hasIn = resIn.data && resIn.data.route;
+
+                    if (!hasOut && !hasIn) throw new Error('找不到該路線');
+
+                    if (hasOut) {
+                        boundSelect.innerHTML += `<option value="O" data-dir="outbound">[去程] 往 ${resOut.data.dest_tc}</option>`;
+                    }
+                    if (hasIn) {
+                        boundSelect.innerHTML += `<option value="I" data-dir="inbound">[回程] 往 ${resIn.data.dest_tc}</option>`;
+                    }
                 }
 
                 document.getElementById('dir-section').style.display = 'block';
@@ -129,43 +138,38 @@
 
             try {
                 let stopList = [];
+                let stopDetails = [];
+
                 if (company === 'kmb') {
                     const res = await fetch(`${KMB_API}/route-stop/${route}/${dir}/1`);
                     const data = await res.json();
-                    stopList = data.data;
+                    stopList = data.data || [];
 
-                    // 使用 Promise.all 並行載入所有站名（大幅提升速度）
-                    const stopDetails = await Promise.all(
+                    stopDetails = await Promise.all(
                         stopList.map(item => 
                             fetch(`${KMB_API}/stop/${item.stop}`)
                                 .then(res => res.json())
                                 .then(data => ({ seq: item.seq, stop: item.stop, name: data.data.name_tc }))
                         )
                     );
-
-                    stopSelect.innerHTML = '<option value="">-- 請選擇車站 --</option>';
-                    stopDetails.forEach(item => {
-                        stopSelect.innerHTML += `<option value="${item.stop}">${item.seq}. ${item.name}</option>`;
-                    });
                 } else {
                     const res = await fetch(`${CTB_API}/route-stop/CTB/${route}/${dir}`);
                     const data = await res.json();
-                    stopList = data.data;
+                    stopList = data.data || [];
 
-                    // 使用 Promise.all 並行載入城巴站名
-                    const stopDetails = await Promise.all(
+                    stopDetails = await Promise.all(
                         stopList.map(item => 
                             fetch(`${CTB_API}/stop/${item.stop}`)
                                 .then(res => res.json())
                                 .then(data => ({ seq: item.seq, stop: item.stop, name: data.data.name_tc }))
                         )
                     );
-
-                    stopSelect.innerHTML = '<option value="">-- 請選擇車站 --</option>';
-                    stopDetails.forEach(item => {
-                        stopSelect.innerHTML += `<option value="${item.stop}">${item.seq}. ${item.name}</option>`;
-                    });
                 }
+
+                stopSelect.innerHTML = '<option value="">-- 請選擇車站 --</option>';
+                stopDetails.forEach(item => {
+                    stopSelect.innerHTML += `<option value="${item.stop}">${item.seq}. ${item.name}</option>`;
+                });
             } catch (err) {
                 alert('獲取車站資料失敗');
             }
