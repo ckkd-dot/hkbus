@@ -1,526 +1,128 @@
 <!DOCTYPE html>
-<html lang="zh-Hant">
+<html lang="zh-HK">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=yes">
-  <title>🚌 香港巴士即時到站查詢</title>
-  <style>
-    :root {
-      --bg-gradient: linear-gradient(145deg, #f0f4f8 0%, #d9e2ec 100%);
-      --card-bg: rgba(255, 255, 255, 0.92);
-      --primary: #1f4e6f;
-      --primary-dark: #0f3145;
-      --accent: #2e6a9e;
-      --text-dark: #1a2b3c;
-      --text-mid: #3c556b;
-      --border-light: #d0dde8;
-      --eta-soon: #b13e3e;
-      --eta-medium: #b17f3e;
-      --eta-normal: #1f4e6f;
-      --shadow-card: 0 20px 35px rgba(0, 20, 40, 0.15), 0 6px 12px rgba(0, 0, 0, 0.05);
-    }
-    * {
-      margin: 0;
-      padding: 0;
-      box-sizing: border-box;
-      font-family: system-ui, -apple-system, 'Segoe UI', Roboto, 'Noto Sans TC', 'PingFang TC', 'Microsoft JhengHei', sans-serif;
-    }
-    body {
-      background: var(--bg-gradient);
-      min-height: 100vh;
-      display: flex;
-      justify-content: center;
-      align-items: flex-start;
-      padding: 1.5rem 1rem 3rem;
-    }
-    .app-card {
-      width: 100%;
-      max-width: 620px;
-      background: var(--card-bg);
-      backdrop-filter: blur(12px);
-      -webkit-backdrop-filter: blur(12px);
-      border-radius: 2rem;
-      box-shadow: var(--shadow-card);
-      padding: 1.8rem 1.5rem 2rem;
-      border: 1px solid rgba(255, 255, 255, 0.7);
-    }
-    h1 {
-      font-size: 1.9rem;
-      font-weight: 700;
-      color: var(--text-dark);
-      display: flex;
-      align-items: center;
-      gap: 0.5rem;
-      letter-spacing: -0.5px;
-      margin-bottom: 0.4rem;
-    }
-    .subtitle {
-      color: var(--text-mid);
-      font-size: 0.9rem;
-      margin-bottom: 1.5rem;
-      border-left: 4px solid var(--accent);
-      padding-left: 0.8rem;
-      background: rgba(46, 106, 158, 0.06);
-      border-radius: 0 0.5rem 0.5rem 0;
-      line-height: 1.5;
-    }
-    .search-area {
-      display: flex;
-      flex-direction: column;
-      gap: 0.9rem;
-      margin-bottom: 1.5rem;
-    }
-    .input-label {
-      font-weight: 600;
-      color: var(--text-dark);
-      font-size: 0.95rem;
-      display: flex;
-      align-items: center;
-      gap: 0.4rem;
-    }
-    .input-wrapper {
-      display: flex;
-      gap: 0.7rem;
-    }
-    #stationId {
-      flex: 1;
-      padding: 0.9rem 1.2rem;
-      border-radius: 3rem;
-      border: 2px solid var(--border-light);
-      background: white;
-      font-size: 1.1rem;
-      font-weight: 500;
-      color: #102331;
-      transition: all 0.2s;
-      outline: none;
-      box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.02);
-    }
-    #stationId:focus {
-      border-color: var(--accent);
-      box-shadow: 0 0 0 4px rgba(46, 106, 158, 0.15);
-    }
-    #stationId::placeholder {
-      color: #8fa4b8;
-      font-weight: 400;
-    }
-    button {
-      background: var(--primary);
-      border: none;
-      color: white;
-      padding: 0 1.6rem;
-      border-radius: 3rem;
-      font-weight: 600;
-      font-size: 1rem;
-      letter-spacing: 0.5px;
-      cursor: pointer;
-      transition: 0.2s;
-      display: flex;
-      align-items: center;
-      gap: 0.4rem;
-      box-shadow: 0 6px 12px rgba(26, 60, 90, 0.2);
-      border: 1px solid rgba(255, 255, 255, 0.2);
-      white-space: nowrap;
-    }
-    button:hover {
-      background: var(--primary-dark);
-      transform: scale(1.02);
-      box-shadow: 0 8px 16px rgba(26, 60, 90, 0.3);
-    }
-    button:active {
-      transform: scale(0.98);
-      background: #0a2536;
-    }
-    button:disabled {
-      opacity: 0.6;
-      cursor: not-allowed;
-      transform: none;
-    }
-    .example-hint {
-      font-size: 0.85rem;
-      color: #4d6b82;
-      display: flex;
-      flex-wrap: wrap;
-      gap: 0.5rem;
-      align-items: center;
-    }
-    .example-chip {
-      background: #e9f0f6;
-      padding: 0.25rem 0.8rem;
-      border-radius: 1rem;
-      font-weight: 500;
-      color: #1b4b6c;
-      cursor: pointer;
-      transition: 0.1s;
-      border: 1px solid #cbdae6;
-    }
-    .example-chip:hover {
-      background: #d9e5f0;
-    }
-    .status-message {
-      min-height: 2.2rem;
-      margin: 0.8rem 0 1rem;
-      font-size: 0.95rem;
-      color: var(--text-mid);
-      font-weight: 500;
-      display: flex;
-      align-items: center;
-      gap: 0.4rem;
-    }
-    .results-container {
-      background: #f8fafd;
-      border-radius: 1.6rem;
-      padding: 1.3rem 1.2rem;
-      border: 1px solid #dee8f0;
-      box-shadow: inset 0 1px 4px rgba(0, 0, 0, 0.02);
-      min-height: 180px;
-    }
-    .company-section {
-      margin-bottom: 1.5rem;
-      background: white;
-      border-radius: 1.2rem;
-      padding: 1rem 1rem 0.9rem;
-      box-shadow: 0 4px 10px rgba(0, 0, 0, 0.03);
-      border: 1px solid #e2ecf5;
-    }
-    .company-header {
-      font-weight: 700;
-      font-size: 1.2rem;
-      color: var(--text-dark);
-      display: flex;
-      align-items: center;
-      gap: 0.5rem;
-      padding-bottom: 0.7rem;
-      border-bottom: 2px dashed #cbdae8;
-      margin-bottom: 0.8rem;
-    }
-    .route-list {
-      display: flex;
-      flex-direction: column;
-      gap: 0.6rem;
-    }
-    .route-item {
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      padding: 0.65rem 0.8rem;
-      background: #f4f8fc;
-      border-radius: 1rem;
-      border-left: 4px solid var(--accent);
-      flex-wrap: wrap;
-      gap: 0.4rem;
-    }
-    .route-info {
-      display: flex;
-      flex-direction: column;
-      font-weight: 600;
-      color: #0c2638;
-    }
-    .route-dest {
-      font-size: 0.8rem;
-      color: #54738d;
-      font-weight: 400;
-    }
-    .eta-times {
-      display: flex;
-      flex-wrap: wrap;
-      gap: 0.4rem;
-      justify-content: flex-end;
-    }
-    .eta-badge {
-      background: var(--eta-normal);
-      color: white;
-      padding: 0.25rem 0.8rem;
-      border-radius: 2rem;
-      font-weight: 600;
-      font-size: 0.85rem;
-      letter-spacing: 0.3px;
-    }
-    .eta-badge.soon {
-      background: var(--eta-soon);
-    }
-    .eta-badge.medium {
-      background: var(--eta-medium);
-    }
-    .no-result {
-      text-align: center;
-      color: #6f8ba1;
-      padding: 2rem 0.5rem;
-      font-style: italic;
-    }
-    .footer-note {
-      margin-top: 1rem;
-      font-size: 0.7rem;
-      color: #8799a8;
-      text-align: center;
-    }
-    .loader {
-      display: inline-block;
-      width: 1rem;
-      height: 1rem;
-      border: 2px solid rgba(31, 78, 111, 0.3);
-      border-radius: 50%;
-      border-top-color: var(--primary);
-      animation: spin 0.8s linear infinite;
-      margin-left: 0.4rem;
-    }
-    @keyframes spin {
-      to { transform: rotate(360deg); }
-    }
-  </style>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>九巴即時到站時間</title>
+    <style>
+        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; max-width: 600px; margin: 20px auto; padding: 0 15px; background: #f5f5f7; color: #333; }
+        h1 { text-align: center; color: #d32f2f; }
+        .card { background: white; padding: 20px; border-radius: 12px; box-shadow: 0 2px 8px rgba(0,0,0,0.1); margin-bottom: 20px; }
+        label { font-weight: bold; display: block; margin-top: 10px; margin-bottom: 5px; }
+        input, select, button { width: 100%; padding: 12px; margin-bottom: 10px; border: 1px solid #ccc; border-radius: 8px; box-sizing: border-box; font-size: 16px; }
+        button { background: #d32f2f; color: white; border: none; font-weight: bold; cursor: pointer; }
+        button:hover { background: #b71c1c; }
+        .eta-item { background: #fafafa; border-left: 4px solid #d32f2f; padding: 10px; margin-top: 10px; border-radius: 4px; display: flex; justify-content: space-between; }
+        .eta-time { font-weight: bold; color: #d32f2f; }
+    </style>
 </head>
 <body>
-  <div class="app-card">
-    <h1>🚏 巴士即時到站</h1>
-    <div class="subtitle">輸入巴士站編號，查詢九巴、城巴等真實到站時間</div>
 
-    <div class="search-area">
-      <span class="input-label">🔎 巴士站編號</span>
-      <div class="input-wrapper">
-        <input type="text" id="stationId" inputmode="numeric" pattern="[0-9]*" placeholder="例如：95421（九巴）或 002345（城巴）" autocomplete="off">
-        <button id="searchBtn">查詢 <span>🚌</span></button>
-      </div>
-      <div class="example-hint">
-        <span>常用站點：</span>
-        <span class="example-chip" data-id="95421">天瑞總站</span>
-        <span class="example-chip" data-id="93601">天水圍站</span>
-        <span class="example-chip" data-id="002345">中環碼頭</span>
-      </div>
+    <h1>🚌 九巴即時到站查詢</h1>
+
+    <div class="card">
+        <label for="route">1. 輸入路線 (例如: 268X)</label>
+        <input type="text" id="route" placeholder="請輸入路線號碼" value="268X">
+        
+        <button onclick="getDirections()">搜尋路線方向</button>
+
+        <div id="dir-section" style="display:none;">
+            <label for="bound">2. 選擇方向</label>
+            <select id="bound" onchange="getStops()">
+                <option value="">-- 請選擇方向 --</option>
+            </select>
+        </div>
+
+        <div id="stop-section" style="display:none;">
+            <label for="stop">3. 選擇巴士站</label>
+            <select id="stop" onchange="getETA()">
+                <option value="">-- 請選擇車站 --</option>
+            </select>
+        </div>
     </div>
 
-    <div class="status-message" id="statusMsg">
-      <span>👋 請輸入巴士站編號</span>
+    <div class="card" id="eta-result" style="display:none;">
+        <h3>到站時間估算 (ETA)</h3>
+        <div id="eta-list"></div>
     </div>
 
-    <div class="results-container" id="resultsContainer">
-      <div class="no-result" id="placeholderResult">
-        🚌 查詢結果會顯示在這裡<br>（可點擊上方常用站點快速查詢）
-      </div>
-    </div>
-    <div class="footer-note">
-      * 數據來源：香港政府資料一線通 (data.gov.hk)
-    </div>
-  </div>
+    <script>
+        const API_BASE = 'https://data.etabus.gov.hk/v1/transport/kmb';
 
-  <script>
-    (function() {
-      // 直接使用 API，不經過 CORS 代理
-      // 這些 API 支持 CORS，可以直接從瀏覽器訪問
-      const API_ENDPOINTS = {
-        // 九巴/龍運
-        KMB: 'https://data.etabus.gov.hk/v1/transport/kmb/stop-eta/',
-        // 城巴/新巴
-        CTB: 'https://data.etabus.gov.hk/v1/transport/ctb/stop-eta/'
-      };
+        async function getDirections() {
+            const route = document.getElementById('route').value.trim().toUpperCase();
+            if (!route) return alert('請輸入路線號碼');
 
-      const stationInput = document.getElementById('stationId');
-      const searchBtn = document.getElementById('searchBtn');
-      const statusMsg = document.getElementById('statusMsg');
-      const resultsContainer = document.getElementById('resultsContainer');
-      const placeholderResult = document.getElementById('placeholderResult');
+            const res = await fetch(`${API_BASE}/route/`);
+            const data = await res.json();
+            const routeData = data.data.filter(r => r.route === route);
 
-      let requestSeq = 0;
+            if (routeData.length === 0) return alert('找不到該路線');
 
-      function setStatus(message, isError = false) {
-        statusMsg.innerHTML = message;
-        statusMsg.style.color = isError ? '#b13e3e' : '#29485e';
-      }
+            const boundSelect = document.getElementById('bound');
+            boundSelect.innerHTML = '<option value="">-- 請選擇方向 --</option>';
 
-      function clearPlaceholder() {
-        if (placeholderResult) placeholderResult.style.display = 'none';
-      }
-
-      function minutesFromNow(isoStr) {
-        if (!isoStr) return null;
-        const eta = new Date(isoStr);
-        const now = new Date();
-        if (isNaN(eta.getTime())) return null;
-        const diff = (eta - now) / 60000;
-        return diff < 0 ? 0 : Math.round(diff);
-      }
-
-      function renderResults(groups) {
-        if (groups.length === 0) {
-          resultsContainer.innerHTML = `<div class="no-result">😕 暫時沒有到站資料。可能已經收車或者該站不支援預報。</div>`;
-          return;
-        }
-
-        let html = "";
-        groups.forEach(group => {
-          html += `<div class="company-section">`;
-          html += `<div class="company-header">🏢 ${group.company}</div>`;
-          html += `<div class="route-list">`;
-
-          group.routes.forEach(r => {
-            const badges = r.etas.map(m => {
-              let cls = "eta-badge";
-              if (m !== null) {
-                if (m <= 5) cls += " soon";
-                else if (m <= 15) cls += " medium";
-              }
-              const text = m === null ? "――" : `${m} 分鐘`;
-              return `<span class="${cls}">${text}</span>`;
-            }).join("");
-
-            html += `
-              <div class="route-item">
-                <div class="route-info">
-                  <span>${r.route} <span style="font-weight:400;">往</span> ${r.dest}</span>
-                  <span class="route-dest">目的地：${r.dest}</span>
-                </div>
-                <div class="eta-times">${badges}</div>
-              </div>
-            `;
-          });
-
-          html += `</div></div>`;
-        });
-
-        resultsContainer.innerHTML = html;
-      }
-
-      async function performSearch() {
-        const rawId = stationInput.value.trim();
-        if (!rawId) {
-          setStatus('⚠️ 請先輸入巴士站編號', true);
-          resultsContainer.innerHTML = `<div class="no-result">輸入編號後按「查詢」</div>`;
-          return;
-        }
-
-        // 接受5位或6位數字
-        if (!/^\d{5,6}$/.test(rawId)) {
-          setStatus('⚠️ 請輸入5位（九巴）或6位（城巴）數字的站牌編號', true);
-          return;
-        }
-
-        const seq = ++requestSeq;
-        setStatus(`🔍 正在查詢「${rawId}」… <span class="loader"></span>`);
-        searchBtn.disabled = true;
-        searchBtn.innerHTML = '查詢中…';
-        resultsContainer.innerHTML = '';
-
-        try {
-          let apiUrl;
-          let companyName;
-          
-          if (rawId.length === 5) {
-            apiUrl = API_ENDPOINTS.KMB + rawId;
-            companyName = '九巴 KMB';
-          } else if (rawId.length === 6) {
-            apiUrl = API_ENDPOINTS.CTB + rawId;
-            companyName = '城巴 CTB';
-          }
-
-          console.log('正在請求:', apiUrl);
-
-          const response = await fetch(apiUrl, {
-            method: 'GET',
-            headers: {
-              'Accept': 'application/json',
-            },
-            signal: AbortSignal.timeout(15000) // 15秒超時
-          });
-
-          if (!response.ok) {
-            throw new Error(`HTTP ${response.status}`);
-          }
-
-          const json = await response.json();
-          console.log('API回應:', json);
-
-          if (seq !== requestSeq) return;
-
-          // 解析數據
-          const routes = [];
-          if (json.eta && Array.isArray(json.eta)) {
-            const routeMap = {};
-            for (const e of json.eta) {
-              const key = e.route + "|" + e.dest_tc;
-              if (!routeMap[key]) {
-                routeMap[key] = { 
-                  route: e.route, 
-                  dest: e.dest_tc || e.dest_en || '未知目的地', 
-                  etas: [] 
-                };
-              }
-              const min = minutesFromNow(e.eta);
-              routeMap[key].etas.push(min);
-            }
-            
-            for (const key in routeMap) {
-              routes.push(routeMap[key]);
-            }
-          }
-
-          const groups = [];
-          if (routes.length > 0) {
-            groups.push({
-              company: companyName,
-              routes: routes
+            // 取得去程與回程
+            const bounds = [...new Set(routeData.map(r => JSON.stringify({bound: r.bound, orig: r.orig_tc, dest: r.dest_tc})))];
+            bounds.forEach(bStr => {
+                const b = JSON.parse(bStr);
+                const dirText = b.bound === 'O' ? '去程' : '回程';
+                boundSelect.innerHTML += `<option value="${b.bound}">[${dirText}] 往 ${b.dest}</option>`;
             });
-          }
 
-          clearPlaceholder();
-          renderResults(groups);
-          
-          if (routes.length > 0) {
-            setStatus(`✅ 已取得 ${routes.length} 條路線的到站預報`);
-          } else {
-            setStatus('ℹ️ 該站暫時沒有到站數據');
-          }
-
-        } catch (err) {
-          console.error('查詢錯誤:', err);
-          if (seq !== requestSeq) return;
-          
-          let errorMsg = '無法連接到數據服務';
-          if (err.name === 'TimeoutError') {
-            errorMsg = '連接超時，請檢查網絡';
-          } else if (err.message.includes('Failed to fetch')) {
-            errorMsg = '網絡連接失敗，可能是防火牆或DNS問題';
-          } else if (err.message.includes('404')) {
-            errorMsg = '找不到此站牌編號';
-          }
-          
-          setStatus(`⚠️ ${errorMsg}`, true);
-          resultsContainer.innerHTML = `
-            <div class="no-result">
-              <div>😥 查詢失敗</div>
-              <div style="font-size:0.8rem; margin-top:0.5rem;">${errorMsg}</div>
-              <div style="font-size:0.8rem; margin-top:0.5rem;">請檢查：</div>
-              <div style="font-size:0.8rem;">• 是否已連接到互聯網</div>
-              <div style="font-size:0.8rem;">• 站牌編號是否正確</div>
-              <div style="font-size:0.8rem;">• 是否需要使用VPN</div>
-            </div>
-          `;
-        } finally {
-          if (seq === requestSeq) {
-            searchBtn.disabled = false;
-            searchBtn.innerHTML = '查詢 <span>🚌</span>';
-          }
+            document.getElementById('dir-section').style.display = 'block';
+            document.getElementById('stop-section').style.display = 'none';
+            document.getElementById('eta-result').style.display = 'none';
         }
-      }
 
-      function setupExampleChips() {
-        document.querySelectorAll('.example-chip').forEach(chip => {
-          chip.addEventListener('click', e => {
-            stationInput.value = e.target.dataset.id;
-            performSearch();
-          });
-        });
-      }
+        async function getStops() {
+            const route = document.getElementById('route').value.trim().toUpperCase();
+            const bound = document.getElementById('bound').value;
+            if (!bound) return;
 
-      stationInput.addEventListener('keypress', e => {
-        if (e.key === 'Enter') {
-          e.preventDefault();
-          performSearch();
+            const res = await fetch(`${API_BASE}/route-stop/${route}/${bound === 'O' ? 'outbound' : 'inbound'}/1`);
+            const data = await res.json();
+            
+            const stopSelect = document.getElementById('stop');
+            stopSelect.innerHTML = '<option value="">-- 請選擇車站 --</option>';
+
+            for (const item of data.data) {
+                const stopRes = await fetch(`${API_BASE}/stop/${item.stop}`);
+                const stopData = await stopRes.json();
+                stopSelect.innerHTML += `<option value="${item.stop}">${item.seq}. ${stopData.data.name_tc}</option>`;
+            }
+
+            document.getElementById('stop-section').style.display = 'block';
         }
-      });
 
-      searchBtn.addEventListener('click', performSearch);
-      setupExampleChips();
+        async function getETA() {
+            const route = document.getElementById('route').value.trim().toUpperCase();
+            const stopId = document.getElementById('stop').value;
+            if (!stopId) return;
 
-      setStatus('👋 請輸入巴士站編號（九巴5位、城巴6位）');
-    })();
-  </script>
+            const res = await fetch(`${API_BASE}/eta/${stopId}/${route}/1`);
+            const data = await res.json();
+            const etaList = document.getElementById('eta-list');
+            etaList.innerHTML = '';
+
+            const validEtas = data.data.filter(e => e.eta);
+            if (validEtas.length === 0) {
+                etaList.innerHTML = '<div>暫無即時到站資料</div>';
+            } else {
+                validEtas.forEach(e => {
+                    const etaTime = new Date(e.eta).toLocaleTimeString('zh-HK', { hour: '2-digit', minute: '2-digit' });
+                    const rmk = e.rmk_tc ? ` (${e.rmk_tc})` : '';
+                    etaList.innerHTML += `
+                        <div class="eta-item">
+                            <span>目的地: ${e.dest_tc}${rmk}</span>
+                            <span class="eta-time">${etaTime}</span>
+                        </div>
+                    `;
+                });
+            }
+
+            document.getElementById('eta-result').style.display = 'block';
+        }
+    </script>
 </body>
 </html>
