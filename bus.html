@@ -16,10 +16,6 @@
         .eta-item { background: #fafafa; border-left: 4px solid #d32f2f; padding: 10px; margin-top: 10px; border-radius: 4px; display: flex; justify-content: space-between; align-items: center; }
         .eta-time { font-weight: bold; color: #d32f2f; font-size: 18px; }
         .loading { text-align: center; color: #666; padding: 10px; }
-        .hint { font-size: 13px; color: #888; margin-top: 5px; }
-        .status { font-size: 13px; color: #888; text-align: right; margin-top: 8px; }
-        .refresh-bar { display: flex; justify-content: space-between; align-items: center; margin-top: 12px; }
-        .refresh-bar button { width: auto; padding: 8px 16px; margin: 0; font-size: 14px; background: #555; }
     </style>
 </head>
 <body>
@@ -35,7 +31,7 @@
 
         <label for="route">2. 輸入路線 (例如: 268X / 102)</label>
         <input type="text" id="route" placeholder="請輸入路線號碼" value="268X">
-
+        
         <button id="search-btn" onclick="getDirections()">搜尋路線方向</button>
 
         <div id="dir-section" style="display:none;">
@@ -47,106 +43,22 @@
 
         <div id="stop-section" style="display:none;">
             <label for="stop">4. 選擇巴士站</label>
-            <select id="stop" onchange="onStopSelected()">
+            <select id="stop" onchange="getETA()">
                 <option value="">-- 請選擇車站 --</option>
             </select>
-            <div class="hint" id="stop-loading-hint" style="display:none;">載入站名中…</div>
         </div>
     </div>
 
     <div class="card" id="eta-result" style="display:none;">
         <h3>到站時間估算 (ETA)</h3>
         <div id="eta-list"></div>
-        <div class="refresh-bar">
-            <span class="status" id="refresh-status"></span>
-            <button onclick="getETA(true)">立即更新</button>
-        </div>
     </div>
 
     <script>
         const KMB_API = 'https://data.etabus.gov.hk/v1/transport/kmb';
         const CTB_API = 'https://rt.data.gov.hk/v2/transport/citybus';
 
-        // ================= 基礎工具 =================
-
-        // 帶重試 + 指數退避的 fetch，專門處理 429 / 5xx
-        async function fetchJSON(url, retries = 3) {
-            for (let i = 0; i <= retries; i++) {
-                try {
-                    const res = await fetch(url);
-                    if (res.status === 429 || res.status >= 500) {
-                        if (i === retries) throw new Error('伺服器繁忙，請稍後再試');
-                        const wait = 500 * Math.pow(2, i) + Math.random() * 300;
-                        await new Promise(r => setTimeout(r, wait));
-                        continue;
-                    }
-                    if (!res.ok) throw new Error('HTTP ' + res.status);
-                    return await res.json();
-                } catch (err) {
-                    if (i === retries) throw err;
-                    await new Promise(r => setTimeout(r, 400 * (i + 1)));
-                }
-            }
-        }
-
-        // 簡易並發池：最多同時跑 limit 個任務，避免一次發出大量請求
-        async function runPool(items, limit, worker) {
-            const results = new Array(items.length);
-            let next = 0;
-            async function workerLoop() {
-                while (next < items.length) {
-                    const i = next++;
-                    results[i] = await worker(items[i], i);
-                }
-            }
-            await Promise.all(
-                Array.from({ length: Math.min(limit, items.length) }, workerLoop)
-            );
-            return results;
-        }
-
-        // ================= 快取 =================
-        const stopNameCache = new Map();       // stopId -> 站名（整個工作階段重用）
-        const directionsCache = new Map();     // "公司|路線" -> 方向列表
-        const etaCache = new Map();            // "公司|路線|站" -> { data, time }
-        const ETA_CACHE_TTL = 10000;           // ETA 快取 10 秒
-
-        // ================= 自動更新 =================
-        let refreshTimer = null;
-        let countdownTimer = null;
-        let countdown = 0;
-        const REFRESH_INTERVAL = 30;           // 每 30 秒自動更新
-
-        function startAutoRefresh() {
-            stopAutoRefresh();
-            countdown = REFRESH_INTERVAL;
-            updateRefreshStatus();
-            refreshTimer = setInterval(() => getETA(false), REFRESH_INTERVAL * 1000);
-            countdownTimer = setInterval(() => {
-                countdown--;
-                if (countdown <= 0) countdown = REFRESH_INTERVAL;
-                updateRefreshStatus();
-            }, 1000);
-        }
-
-        function stopAutoRefresh() {
-            if (refreshTimer) clearInterval(refreshTimer);
-            if (countdownTimer) clearInterval(countdownTimer);
-            refreshTimer = null;
-            countdownTimer = null;
-            document.getElementById('refresh-status').textContent = '';
-        }
-
-        function updateRefreshStatus(extraText) {
-            const el = document.getElementById('refresh-status');
-            if (extraText) { el.textContent = extraText; return; }
-            el.textContent = refreshTimer ? countdown + ' 秒後自動更新' : '';
-        }
-
-        // ================= 流程 =================
-
         function resetForm() {
-            stopAutoRefresh();
             document.getElementById('dir-section').style.display = 'none';
             document.getElementById('stop-section').style.display = 'none';
             document.getElementById('eta-result').style.display = 'none';
@@ -157,7 +69,6 @@
             const route = document.getElementById('route').value.trim().toUpperCase();
             if (!route) return alert('請輸入路線號碼');
 
-            stopAutoRefresh();
             const boundSelect = document.getElementById('bound');
             boundSelect.innerHTML = '<option value="">-- 請選擇方向 --</option>';
 
@@ -165,42 +76,39 @@
             searchBtn.disabled = true;
             searchBtn.innerText = '搜尋中...';
 
-            const cacheKey = company + '|' + route;
             try {
-                if (directionsCache.has(cacheKey)) {
-                    // 用快取，完全不打 API
-                    directionsCache.get(cacheKey).forEach(opt => boundSelect.innerHTML += opt.html);
-                } else if (company === 'kmb') {
-                    const data = await fetchJSON(`${KMB_API}/route/`);
-                    const routeData = (data.data || []).filter(r => r.route === route);
+                if (company === 'kmb') {
+                    const res = await fetch(`${KMB_API}/route/`);
+                    const data = await res.json();
+                    const routeData = data.data.filter(r => r.route === route);
+
                     if (routeData.length === 0) throw new Error('找不到該路線');
 
-                    const options = [];
-                    routeData.forEach(r => {
-                        const dirText = r.bound === 'O' ? '去程' : '回程';
-                        const apiDir = r.bound === 'O' ? 'outbound' : 'inbound';
-                        options.push({
-                            html: `<option value="${r.bound}" data-dir="${apiDir}">[${dirText}] 往 ${r.dest_tc}</option>`
-                        });
+                    const bounds = [...new Set(routeData.map(r => JSON.stringify({ bound: r.bound, orig: r.orig_tc, dest: r.dest_tc })))];
+                    bounds.forEach(bStr => {
+                        const b = JSON.parse(bStr);
+                        const dirText = b.bound === 'O' ? '去程' : '回程';
+                        const apiDir = b.bound === 'O' ? 'outbound' : 'inbound';
+                        boundSelect.innerHTML += `<option value="${b.bound}" data-dir="${apiDir}">[${dirText}] 往 ${b.dest}</option>`;
                     });
-                    directionsCache.set(cacheKey, options);
-                    options.forEach(o => boundSelect.innerHTML += o.html);
                 } else {
-                    // 城巴 V2 API：分別呼叫 outbound 和 inbound
+                    // 城巴：分別呼叫 outbound 和 inbound
                     const [resOut, resIn] = await Promise.all([
-                        fetchJSON(`${CTB_API}/route/CTB/${route}/outbound`),
-                        fetchJSON(`${CTB_API}/route/CTB/${route}/inbound`)
+                        fetch(`${CTB_API}/route/CTB/${route}/outbound`).then(r => r.json()),
+                        fetch(`${CTB_API}/route/CTB/${route}/inbound`).then(r => r.json())
                     ]);
 
                     const hasOut = resOut.data && resOut.data.route;
                     const hasIn = resIn.data && resIn.data.route;
+
                     if (!hasOut && !hasIn) throw new Error('找不到該路線');
 
-                    const options = [];
-                    if (hasOut) options.push({ html: `<option value="O" data-dir="outbound">[去程] 往 ${resOut.data.dest_tc}</option>` });
-                    if (hasIn) options.push({ html: `<option value="I" data-dir="inbound">[回程] 往 ${resIn.data.dest_tc}</option>` });
-                    directionsCache.set(cacheKey, options);
-                    options.forEach(o => boundSelect.innerHTML += o.html);
+                    if (hasOut) {
+                        boundSelect.innerHTML += `<option value="O" data-dir="outbound">[去程] 往 ${resOut.data.dest_tc}</option>`;
+                    }
+                    if (hasIn) {
+                        boundSelect.innerHTML += `<option value="I" data-dir="inbound">[回程] 往 ${resIn.data.dest_tc}</option>`;
+                    }
                 }
 
                 document.getElementById('dir-section').style.display = 'block';
@@ -219,128 +127,96 @@
             const route = document.getElementById('route').value.trim().toUpperCase();
             const boundSelect = document.getElementById('bound');
             const selectedOpt = boundSelect.options[boundSelect.selectedIndex];
+            
             if (!selectedOpt.value) return;
 
-            stopAutoRefresh();
             const dir = selectedOpt.getAttribute('data-dir');
             const stopSelect = document.getElementById('stop');
-            const hint = document.getElementById('stop-loading-hint');
             stopSelect.innerHTML = '<option value="">-- 請選擇車站 (載入中...) --</option>';
             document.getElementById('stop-section').style.display = 'block';
             document.getElementById('eta-result').style.display = 'none';
-            hint.style.display = 'block';
 
             try {
                 let stopList = [];
-                let stopUrlBase, companyPrefix;
+                let stopDetails = [];
 
                 if (company === 'kmb') {
-                    const data = await fetchJSON(`${KMB_API}/route-stop/${route}/${dir}/1`);
+                    const res = await fetch(`${KMB_API}/route-stop/${route}/${dir}/1`);
+                    const data = await res.json();
                     stopList = data.data || [];
-                    stopUrlBase = KMB_API + '/stop/';
-                    companyPrefix = '';
+
+                    stopDetails = await Promise.all(
+                        stopList.map(item => 
+                            fetch(`${KMB_API}/stop/${item.stop}`)
+                                .then(res => res.json())
+                                .then(data => ({ seq: item.seq, stop: item.stop, name: data.data.name_tc }))
+                        )
+                    );
                 } else {
-                    const data = await fetchJSON(`${CTB_API}/route-stop/CTB/${route}/${dir}`);
+                    const res = await fetch(`${CTB_API}/route-stop/CTB/${route}/${dir}`);
+                    const data = await res.json();
                     stopList = data.data || [];
-                    stopUrlBase = CTB_API + '/stop/CTB/';
-                    companyPrefix = 'CTB';
+
+                    stopDetails = await Promise.all(
+                        stopList.map(item => 
+                            fetch(`${CTB_API}/stop/CTB/${item.stop}`)
+                                .then(res => res.json())
+                                .then(data => ({ seq: item.seq, stop: item.stop, name: data.data.name_tc }))
+                        )
+                    );
                 }
 
-                // 並發上限 4：逐站抓站名，配合快取避免重複請求
-                let done = 0;
-                const stopDetails = await runPool(stopList, 4, async (item) => {
-                    let name = stopNameCache.get(item.stop);
-                    if (!name) {
-                        try {
-                            const data = await fetchJSON(stopUrlBase + item.stop);
-                            name = (data.data && data.data.name_tc) ? data.data.name_tc : item.stop;
-                            stopNameCache.set(item.stop, name);
-                        } catch (e) {
-                            name = item.stop; // 失敗就顯示 ID，不中斷整個流程
-                        }
-                    }
-                    done++;
-                    hint.textContent = `載入站名中… ${done}/${stopList.length}`;
-                    return { seq: item.seq, stop: item.stop, name };
-                });
-
-                stopDetails.sort((a, b) => a.seq - b.seq);
                 stopSelect.innerHTML = '<option value="">-- 請選擇車站 --</option>';
                 stopDetails.forEach(item => {
                     stopSelect.innerHTML += `<option value="${item.stop}">${item.seq}. ${item.name}</option>`;
                 });
-                hint.style.display = 'none';
             } catch (err) {
-                hint.style.display = 'none';
                 alert('獲取車站資料失敗');
             }
         }
 
-        function onStopSelected() {
-            stopAutoRefresh();
-            const stopId = document.getElementById('stop').value;
-            if (!stopId) {
-                document.getElementById('eta-result').style.display = 'none';
-                return;
-            }
-            getETA(true);
-            startAutoRefresh(); // 選好站後開始每 30 秒自動更新
-        }
-
-        async function getETA(manual) {
+        async function getETA() {
             const company = document.getElementById('company').value;
             const route = document.getElementById('route').value.trim().toUpperCase();
             const stopId = document.getElementById('stop').value;
             if (!stopId) return;
 
-            // ETA 短暫快取：10 秒內重複觸發（例如自動+手動撞在一起）不打 API
-            const cacheKey = company + '|' + route + '|' + stopId;
-            const cached = etaCache.get(cacheKey);
-            if (!manual && cached && Date.now() - cached.time < ETA_CACHE_TTL) {
-                renderETA(cached.data);
-                return;
-            }
-
             const etaList = document.getElementById('eta-list');
-            if (manual) etaList.innerHTML = '<div class="loading">載入中...</div>';
+            etaList.innerHTML = '<div class="loading">載入中...</div>';
             document.getElementById('eta-result').style.display = 'block';
-            updateRefreshStatus('更新中…');
 
             try {
-                let data;
+                let validEtas = [];
                 if (company === 'kmb') {
-                    data = await fetchJSON(`${KMB_API}/eta/${stopId}/${route}/1`);
+                    const res = await fetch(`${KMB_API}/eta/${stopId}/${route}/1`);
+                    const data = await res.json();
+                    validEtas = (data.data || []).filter(e => e.eta);
                 } else {
-                    data = await fetchJSON(`${CTB_API}/eta/CTB/${stopId}/${route}`);
+                    const res = await fetch(`${CTB_API}/eta/CTB/${stopId}/${route}`);
+                    const data = await res.json();
+                    validEtas = (data.data || []).filter(e => e.eta);
                 }
-                const validEtas = (data.data || []).filter(e => e.eta);
-                etaCache.set(cacheKey, { data: validEtas, time: Date.now() });
-                renderETA(validEtas);
-                updateRefreshStatus();
-            } catch (err) {
-                etaList.innerHTML = '<div class="loading">獲取到站時間失敗，將於下次自動更新時重試</div>';
-                updateRefreshStatus();
-            }
-        }
 
-        function renderETA(validEtas) {
-            const etaList = document.getElementById('eta-list');
-            etaList.innerHTML = '';
-            if (validEtas.length === 0) {
-                etaList.innerHTML = '<div class="loading">暫無即時到站資料</div>';
-                return;
+                etaList.innerHTML = '';
+                if (validEtas.length === 0) {
+                    etaList.innerHTML = '<div class="loading">暫無即時到站資料</div>';
+                } else {
+                    validEtas.forEach(e => {
+                        const etaTime = new Date(e.eta).toLocaleTimeString('zh-HK', { hour: '2-digit', minute: '2-digit' });
+                        const rmk = e.rmk_tc ? ` (${e.rmk_tc})` : '';
+                        const dest = e.dest_tc || '未提供';
+
+                        etaList.innerHTML += `
+                            <div class="eta-item">
+                                <span>目的地: ${dest}${rmk}</span>
+                                <span class="eta-time">${etaTime}</span>
+                            </div>
+                        `;
+                    });
+                }
+            } catch (err) {
+                etaList.innerHTML = '<div class="loading">獲取到站時間失敗</div>';
             }
-            validEtas.forEach(e => {
-                const etaTime = new Date(e.eta).toLocaleTimeString('zh-HK', { hour: '2-digit', minute: '2-digit' });
-                const rmk = e.rmk_tc ? ` (${e.rmk_tc})` : '';
-                const dest = e.dest_tc || '未提供';
-                etaList.innerHTML += `
-                    <div class="eta-item">
-                        <span>目的地: ${dest}${rmk}</span>
-                        <span class="eta-time">${etaTime}</span>
-                    </div>
-                `;
-            });
         }
     </script>
 </body>
