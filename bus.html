@@ -12,8 +12,10 @@
         input, select, button { width: 100%; padding: 12px; margin-bottom: 10px; border: 1px solid #ccc; border-radius: 8px; box-sizing: border-box; font-size: 16px; }
         button { background: #d32f2f; color: white; border: none; font-weight: bold; cursor: pointer; }
         button:hover { background: #b71c1c; }
-        .eta-item { background: #fafafa; border-left: 4px solid #d32f2f; padding: 10px; margin-top: 10px; border-radius: 4px; display: flex; justify-content: space-between; }
-        .eta-time { font-weight: bold; color: #d32f2f; }
+        button:disabled { background: #ccc; cursor: not-allowed; }
+        .eta-item { background: #fafafa; border-left: 4px solid #d32f2f; padding: 10px; margin-top: 10px; border-radius: 4px; display: flex; justify-content: space-between; align-items: center; }
+        .eta-time { font-weight: bold; color: #d32f2f; font-size: 18px; }
+        .loading { text-align: center; color: #666; padding: 10px; }
     </style>
 </head>
 <body>
@@ -30,7 +32,7 @@
         <label for="route">2. 輸入路線 (例如: 268X / 102)</label>
         <input type="text" id="route" placeholder="請輸入路線號碼" value="268X">
         
-        <button onclick="getDirections()">搜尋路線方向</button>
+        <button id="search-btn" onclick="getDirections()">搜尋路線方向</button>
 
         <div id="dir-section" style="display:none;">
             <label for="bound">3. 選擇方向</label>
@@ -70,25 +72,31 @@
             const boundSelect = document.getElementById('bound');
             boundSelect.innerHTML = '<option value="">-- 請選擇方向 --</option>';
 
+            const searchBtn = document.getElementById('search-btn');
+            searchBtn.disabled = true;
+            searchBtn.innerText = '搜尋中...';
+
             try {
                 if (company === 'kmb') {
                     const res = await fetch(`${KMB_API}/route/`);
                     const data = await res.json();
                     const routeData = data.data.filter(r => r.route === route);
 
-                    if (routeData.length === 0) return alert('找不到該路線');
+                    if (routeData.length === 0) throw new Error('找不到該路線');
 
-                    const bounds = [...new Set(routeData.map(r => JSON.stringify({bound: r.bound, orig: r.orig_tc, dest: r.dest_tc})))];
+                    const bounds = [...new Set(routeData.map(r => JSON.stringify({ bound: r.bound, orig: r.orig_tc, dest: r.dest_tc })))];
                     bounds.forEach(bStr => {
                         const b = JSON.parse(bStr);
                         const dirText = b.bound === 'O' ? '去程' : '回程';
-                        boundSelect.innerHTML += `<option value="${b.bound}" data-dir="${b.bound === 'O' ? 'outbound' : 'inbound'}">[${dirText}] 往 ${b.dest}</option>`;
+                        const apiDir = b.bound === 'O' ? 'outbound' : 'inbound';
+                        boundSelect.innerHTML += `<option value="${b.bound}" data-dir="${apiDir}">[${dirText}] 往 ${b.dest}</option>`;
                     });
                 } else {
-                    // 城巴 API 處理
-                    const resOut = await fetch(`${CTB_API}/route/${company}/${route}`);
+                    // 城巴公司名稱需大寫 CTB
+                    const resOut = await fetch(`${CTB_API}/route/CTB/${route}`);
                     const dataOut = await resOut.json();
-                    if (!dataOut.data || !dataOut.data.route) return alert('找不到該路線');
+                    
+                    if (!dataOut.data || !dataOut.data.route) throw new Error('找不到該路線');
 
                     boundSelect.innerHTML += `<option value="O" data-dir="outbound">[去程] 往 ${dataOut.data.dest_tc}</option>`;
                     boundSelect.innerHTML += `<option value="I" data-dir="inbound">[回程] 往 ${dataOut.data.orig_tc}</option>`;
@@ -98,7 +106,10 @@
                 document.getElementById('stop-section').style.display = 'none';
                 document.getElementById('eta-result').style.display = 'none';
             } catch (err) {
-                alert('獲取路線資料失敗，請稍後再試');
+                alert(err.message || '獲取路線資料失敗，請確認路線是否正確');
+            } finally {
+                searchBtn.disabled = false;
+                searchBtn.innerText = '搜尋路線方向';
             }
         }
 
@@ -107,34 +118,53 @@
             const route = document.getElementById('route').value.trim().toUpperCase();
             const boundSelect = document.getElementById('bound');
             const selectedOpt = boundSelect.options[boundSelect.selectedIndex];
+            
             if (!selectedOpt.value) return;
 
             const dir = selectedOpt.getAttribute('data-dir');
             const stopSelect = document.getElementById('stop');
             stopSelect.innerHTML = '<option value="">-- 請選擇車站 (載入中...) --</option>';
             document.getElementById('stop-section').style.display = 'block';
+            document.getElementById('eta-result').style.display = 'none';
 
             try {
+                let stopList = [];
                 if (company === 'kmb') {
                     const res = await fetch(`${KMB_API}/route-stop/${route}/${dir}/1`);
                     const data = await res.json();
-                    
-                    stopSelect.innerHTML = '<option value="">-- 請選擇車站 --</option>';
-                    for (const item of data.data) {
-                        const stopRes = await fetch(`${KMB_API}/stop/${item.stop}`);
-                        const stopData = await stopRes.json();
-                        stopSelect.innerHTML += `<option value="${item.stop}">${item.seq}. ${stopData.data.name_tc}</option>`;
-                    }
-                } else {
-                    const res = await fetch(`${CTB_API}/route-stop/${company}/${route}/${dir}`);
-                    const data = await res.json();
+                    stopList = data.data;
+
+                    // 使用 Promise.all 並行載入所有站名（大幅提升速度）
+                    const stopDetails = await Promise.all(
+                        stopList.map(item => 
+                            fetch(`${KMB_API}/stop/${item.stop}`)
+                                .then(res => res.json())
+                                .then(data => ({ seq: item.seq, stop: item.stop, name: data.data.name_tc }))
+                        )
+                    );
 
                     stopSelect.innerHTML = '<option value="">-- 請選擇車站 --</option>';
-                    for (const item of data.data) {
-                        const stopRes = await fetch(`${CTB_API}/stop/${item.stop}`);
-                        const stopData = await stopRes.json();
-                        stopSelect.innerHTML += `<option value="${item.stop}">${item.seq}. ${stopData.data.name_tc}</option>`;
-                    }
+                    stopDetails.forEach(item => {
+                        stopSelect.innerHTML += `<option value="${item.stop}">${item.seq}. ${item.name}</option>`;
+                    });
+                } else {
+                    const res = await fetch(`${CTB_API}/route-stop/CTB/${route}/${dir}`);
+                    const data = await res.json();
+                    stopList = data.data;
+
+                    // 使用 Promise.all 並行載入城巴站名
+                    const stopDetails = await Promise.all(
+                        stopList.map(item => 
+                            fetch(`${CTB_API}/stop/${item.stop}`)
+                                .then(res => res.json())
+                                .then(data => ({ seq: item.seq, stop: item.stop, name: data.data.name_tc }))
+                        )
+                    );
+
+                    stopSelect.innerHTML = '<option value="">-- 請選擇車站 --</option>';
+                    stopDetails.forEach(item => {
+                        stopSelect.innerHTML += `<option value="${item.stop}">${item.seq}. ${item.name}</option>`;
+                    });
                 }
             } catch (err) {
                 alert('獲取車站資料失敗');
@@ -148,7 +178,7 @@
             if (!stopId) return;
 
             const etaList = document.getElementById('eta-list');
-            etaList.innerHTML = '<div>載入中...</div>';
+            etaList.innerHTML = '<div class="loading">載入中...</div>';
             document.getElementById('eta-result').style.display = 'block';
 
             try {
@@ -156,30 +186,32 @@
                 if (company === 'kmb') {
                     const res = await fetch(`${KMB_API}/eta/${stopId}/${route}/1`);
                     const data = await res.json();
-                    validEtas = data.data.filter(e => e.eta);
+                    validEtas = (data.data || []).filter(e => e.eta);
                 } else {
-                    const res = await fetch(`${CTB_API}/eta/${company}/${stopId}/${route}`);
+                    const res = await fetch(`${CTB_API}/eta/CTB/${stopId}/${route}`);
                     const data = await res.json();
-                    validEtas = data.data.filter(e => e.eta);
+                    validEtas = (data.data || []).filter(e => e.eta);
                 }
 
                 etaList.innerHTML = '';
                 if (validEtas.length === 0) {
-                    etaList.innerHTML = '<div>暫無即時到站資料</div>';
+                    etaList.innerHTML = '<div class="loading">暫無即時到站資料</div>';
                 } else {
                     validEtas.forEach(e => {
                         const etaTime = new Date(e.eta).toLocaleTimeString('zh-HK', { hour: '2-digit', minute: '2-digit' });
                         const rmk = e.rmk_tc ? ` (${e.rmk_tc})` : '';
+                        const dest = e.dest_tc || '未提供';
+
                         etaList.innerHTML += `
                             <div class="eta-item">
-                                <span>目的地: ${e.dest_tc || '未提供'}${rmk}</span>
+                                <span>目的地: ${dest}${rmk}</span>
                                 <span class="eta-time">${etaTime}</span>
                             </div>
                         `;
                     });
                 }
             } catch (err) {
-                etaList.innerHTML = '<div>獲取到站時間失敗</div>';
+                etaList.innerHTML = '<div class="loading">獲取到站時間失敗</div>';
             }
         }
     </script>
