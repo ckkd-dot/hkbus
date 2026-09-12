@@ -1,60 +1,4 @@
-<!DOCTYPE html>
-<html lang="zh-HK">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>九巴 / 城巴即時到站時間</title>
-    <style>
-        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; max-width: 600px; margin: 20px auto; padding: 0 15px; background: #f5f5f7; color: #333; }
-        h1 { text-align: center; color: #d32f2f; }
-        .card { background: white; padding: 20px; border-radius: 12px; box-shadow: 0 2px 8px rgba(0,0,0,0.1); margin-bottom: 20px; }
-        label { font-weight: bold; display: block; margin-top: 10px; margin-bottom: 5px; }
-        input, select, button { width: 100%; padding: 12px; margin-bottom: 10px; border: 1px solid #ccc; border-radius: 8px; box-sizing: border-box; font-size: 16px; }
-        button { background: #d32f2f; color: white; border: none; font-weight: bold; cursor: pointer; }
-        button:hover { background: #b71c1c; }
-        button:disabled { background: #ccc; cursor: not-allowed; }
-        .eta-item { background: #fafafa; border-left: 4px solid #d32f2f; padding: 10px; margin-top: 10px; border-radius: 4px; display: flex; justify-content: space-between; align-items: center; }
-        .eta-time { font-weight: bold; color: #d32f2f; font-size: 18px; }
-        .loading { text-align: center; color: #666; padding: 10px; }
-    </style>
-</head>
-<body>
-
-    <h1>🚌 巴士即時到站查詢</h1>
-
-    <div class="card">
-        <label for="company">1. 選擇巴士公司</label>
-        <select id="company" onchange="resetForm()">
-            <option value="kmb">九巴 (KMB)</option>
-            <option value="ctb">城巴 (Citybus)</option>
-        </select>
-
-        <label for="route">2. 輸入路線 (例如: 268X / 102)</label>
-        <input type="text" id="route" placeholder="請輸入路線號碼" value="268X">
-        
-        <button id="search-btn" onclick="getDirections()">搜尋路線方向</button>
-
-        <div id="dir-section" style="display:none;">
-            <label for="bound">3. 選擇方向</label>
-            <select id="bound" onchange="getStops()">
-                <option value="">-- 請選擇方向 --</option>
-            </select>
-        </div>
-
-        <div id="stop-section" style="display:none;">
-            <label for="stop">4. 選擇巴士站</label>
-            <select id="stop" onchange="getETA()">
-                <option value="">-- 請選擇車站 --</option>
-            </select>
-        </div>
-    </div>
-
-    <div class="card" id="eta-result" style="display:none;">
-        <h3>到站時間估算 (ETA)</h3>
-        <div id="eta-list"></div>
-    </div>
-
-    <script>
+<script>
         const KMB_API = 'https://data.etabus.gov.hk/v1/transport/kmb';
         const CTB_API = 'https://rt.data.gov.hk/v2/transport/citybus';
 
@@ -92,22 +36,32 @@
                         boundSelect.innerHTML += `<option value="${b.bound}" data-dir="${apiDir}">[${dirText}] 往 ${b.dest}</option>`;
                     });
                 } else {
-                    // 城巴：分別呼叫 outbound 和 inbound
+                    // 【城巴修正】: route API 不接受方向後綴，改由檢查 route-stop 來確認有效方向
                     const [resOut, resIn] = await Promise.all([
-                        fetch(`${CTB_API}/route/CTB/${route}/outbound`).then(r => r.json()),
-                        fetch(`${CTB_API}/route/CTB/${route}/inbound`).then(r => r.json())
+                        fetch(`${CTB_API}/route-stop/CTB/${route}/outbound`).then(r => r.ok ? r.json() : null),
+                        fetch(`${CTB_API}/route-stop/CTB/${route}/inbound`).then(r => r.ok ? r.json() : null)
                     ]);
 
-                    const hasOut = resOut.data && resOut.data.route;
-                    const hasIn = resIn.data && resIn.data.route;
+                    const hasOut = resOut && resOut.data && resOut.data.length > 0;
+                    const hasIn = resIn && resIn.data && resIn.data.length > 0;
 
                     if (!hasOut && !hasIn) throw new Error('找不到該路線');
 
+                    // 輔助函數：透過該方向最後一個車站的資料來獲取目的地名稱
+                    const getDestName = async (res) => {
+                        const lastStopId = res.data[res.data.length - 1].stop;
+                        const stopRes = await fetch(`${CTB_API}/stop/${lastStopId}`);
+                        const stopData = await stopRes.json();
+                        return stopData.data.name_tc;
+                    };
+
                     if (hasOut) {
-                        boundSelect.innerHTML += `<option value="O" data-dir="outbound">[去程] 往 ${resOut.data.dest_tc}</option>`;
+                        const dest = await getDestName(resOut);
+                        boundSelect.innerHTML += `<option value="O" data-dir="outbound">[去程] 往 ${dest}</option>`;
                     }
                     if (hasIn) {
-                        boundSelect.innerHTML += `<option value="I" data-dir="inbound">[回程] 往 ${resIn.data.dest_tc}</option>`;
+                        const dest = await getDestName(resIn);
+                        boundSelect.innerHTML += `<option value="I" data-dir="inbound">[回程] 往 ${dest}</option>`;
                     }
                 }
 
@@ -157,9 +111,10 @@
                     const data = await res.json();
                     stopList = data.data || [];
 
+                    // 【城巴修正】: stop API 路徑不需要 /CTB/，直接接 stop ID 即可
                     stopDetails = await Promise.all(
                         stopList.map(item => 
-                            fetch(`${CTB_API}/stop/CTB/${item.stop}`)
+                            fetch(`${CTB_API}/stop/${item.stop}`)
                                 .then(res => res.json())
                                 .then(data => ({ seq: item.seq, stop: item.stop, name: data.data.name_tc }))
                         )
@@ -171,6 +126,7 @@
                     stopSelect.innerHTML += `<option value="${item.stop}">${item.seq}. ${item.name}</option>`;
                 });
             } catch (err) {
+                console.error(err);
                 alert('獲取車站資料失敗');
             }
         }
@@ -192,6 +148,7 @@
                     const data = await res.json();
                     validEtas = (data.data || []).filter(e => e.eta);
                 } else {
+                    // 此處的城巴 ETA 端點路徑原本是正確的
                     const res = await fetch(`${CTB_API}/eta/CTB/${stopId}/${route}`);
                     const data = await res.json();
                     validEtas = (data.data || []).filter(e => e.eta);
@@ -215,9 +172,8 @@
                     });
                 }
             } catch (err) {
+                console.error(err);
                 etaList.innerHTML = '<div class="loading">獲取到站時間失敗</div>';
             }
         }
     </script>
-</body>
-</html>
